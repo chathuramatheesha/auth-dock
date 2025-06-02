@@ -1,0 +1,6 @@
+ERR_USER_EMAIL_ALREADY_EXISTS = "User already exists: the provided email is taken."
+ERR_USER_CREATION_FAILED = "User creation failed: internal server error."
+ERR_USER_UPDATE_FAILED = "User update failed: internal server error."
+ERR_USER_ID_NOT_FOUND = "User not found: no user with the given ID."
+ERR_USER_EMAIL_NOT_FOUND = "User not found: no user with the given email."
+ERR_USER_NOT_FOUND = "User not found or does not exist."

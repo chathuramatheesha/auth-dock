@@ -6,7 +6,7 @@ authors = [
     { name = "Chathura Matheesha", email = "chathuramatheesha@gmail.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<4.0"
 dependencies = [
     "fastapi[standard] (>=0.115.12,<0.116.0)",
     "uvicorn (>=0.34.3,<0.35.0)",
@@ -17,19 +17,22 @@ dependencies = [
     "aiosqlite (>=0.21.0,<0.22.0)",
     "argon2-cffi (>=23.1.0,<24.0.0)",
     "ulid-py (>=1.1.0,<2.0.0)",
-    "aiosmtplib (>=4.0.1,<5.0.0)"
+    "aiosmtplib (>=4.0.1,<5.0.0)",
+    "rich (>=14.0.0,<15.0.0)",
+    "asgi-correlation-id (>=4.3.4,<5.0.0)",
+    "python-json-logger (>=3.3.0,<4.0.0)"
 ]
 
 [tool.poetry]
-packages = [{ include = "auth_dock", from = "src" }]
+packages = [{ include = "app", from = "src" }]
 
 
 [tool.poetry.group.dev.dependencies]
 black = "^25.1.0"
 
 [tool.poetry.scripts]
-start = 'auth_dock.cli:start'
-dev = 'auth_dock.cli:dev'
+start = 'app.cli:start'
+dev = 'app.cli:dev'
 test = 'pytest:main'
 
 [build-system]
