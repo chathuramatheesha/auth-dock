@@ -8,12 +8,6 @@ class AuthLoginInDTO:
 
 
 @dataclass(frozen=True)
-class AuthLogoutInDTO:
-    access_token: str
-    refresh_token: str
-
-
-@dataclass(frozen=True)
 class AuthTokensOutDTO:
     access_token: str
     refresh_token: str

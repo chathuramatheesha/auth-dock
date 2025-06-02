@@ -1,14 +1,21 @@
 from datetime import datetime, timezone
 
 from fastapi import Request, Response
+from fastapi.security import HTTPAuthorizationCredentials
 
 from app.core import Argon2Hasher, ULID
+from app.schemas import MessageOutDTO
 from app.users.dtos import UserCreateInDTO, UserOutDTO, UserUpdateDTO
 from app.users.service import UserService
+from app.utils.dto_utils import db_to_dto
+from app.utils.token_utils import refresh_token_max_age
+from .blacklisted_token_service import BlacklistedTokenService
 from .jwt_service import JWTService
 from .refresh_token_service import RefreshTokenService
+from ..constants import auth_constants
 from ..dtos import AuthTokensOutDTO, AuthLoginInDTO, RefreshTokenDTO
-from ..enums import TokenType
+from ..dtos import BlacklistedTokenDTO
+from ..enums import TokenType, BlacklistReason
 from ..exceptions import auth_exceptions
 
 
@@ -18,11 +25,13 @@ class AuthService:
         user_service: UserService,
         jwt_service: JWTService,
         refresh_token_service: RefreshTokenService,
+        blacklisted_token_service: BlacklistedTokenService,
         hasher: Argon2Hasher,
     ) -> None:
         self.__user_service = user_service
         self.__jwt_service = jwt_service
         self.__refresh_token_service = refresh_token_service
+        self.__blacklisted_token_service = blacklisted_token_service
         self.__hasher = hasher
 
     async def __update_last_login(self, user_id: ULID) -> None:
@@ -97,8 +106,78 @@ class AuthService:
         )
         await self.__update_last_login(user.id)
 
+        response.set_cookie(
+            key=TokenType.REFRESH_TOKEN.value,
+            value=refresh_token,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=refresh_token_max_age(),
+        )
+
         return AuthTokensOutDTO(
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
         )
+
+    async def logout(
+        self,
+        request: Request,
+        response: Response,
+        current_user: UserOutDTO,
+        token: HTTPAuthorizationCredentials,
+    ) -> MessageOutDTO:
+        access_token_data = await self.__jwt_service.decode_token(
+            token.credentials, TokenType.ACCESS_TOKEN
+        )
+        refresh_token_data = await self.__jwt_service.decode_token(
+            request.cookies.get(TokenType.REFRESH_TOKEN.value),
+            TokenType.REFRESH_TOKEN,
+        )
+
+        current_datetime = datetime.now(timezone.utc)
+
+        await self.__blacklisted_token_service.add_token(
+            BlacklistedTokenDTO(
+                jti=ULID(access_token_data.jti),
+                reason=BlacklistReason.LOGOUT,
+                blacklisted_at=current_datetime,
+            )
+        )
+
+        await self.__blacklisted_token_service.add_token(
+            BlacklistedTokenDTO(
+                jti=ULID(refresh_token_data.jti),
+                reason=BlacklistReason.LOGOUT,
+                blacklisted_at=current_datetime,
+            )
+        )
+
+        await self.__refresh_token_service.delete_token(ULID(refresh_token_data.jti))
+
+        response.delete_cookie(TokenType.REFRESH_TOKEN.value)
+
+        return MessageOutDTO(auth_constants.AUTH_LOGOUT_SUCCESS)
+
+    async def authenticate_user(
+        self, token: HTTPAuthorizationCredentials
+    ) -> UserOutDTO:
+        token_dto = await self.__jwt_service.decode_token(
+            token.credentials, TokenType.ACCESS_TOKEN
+        )
+        user = await self.__user_service.get_user_by_id(ULID(token_dto.sub))
+
+        if not user:
+            raise auth_exceptions.auth_token_invalid_exception
+
+        if user.is_deleted:
+            raise auth_exceptions.auth_deleted_account_exception
+
+        if not user.is_active:
+            raise auth_exceptions.auth_deactivate_account_exception
+
+        if await self.__blacklisted_token_service.get_by_jti(ULID(token_dto.jti)):
+            raise auth_exceptions.auth_token_revoked_exception
+
+        return await db_to_dto(user, UserOutDTO)

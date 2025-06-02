@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.core import ULID
+from ..enums import BlacklistReason
 
 
 @dataclass
@@ -13,3 +14,10 @@ class RefreshTokenDTO:
     created_at: datetime
     expires_at: datetime
     device_info: str | None = None
+
+
+@dataclass(frozen=True)
+class BlacklistedTokenDTO:
+    jti: ULID
+    reason: BlacklistReason
+    blacklisted_at: datetime

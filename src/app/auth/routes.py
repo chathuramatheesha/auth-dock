@@ -1,10 +1,9 @@
 from fastapi import APIRouter, status, Request, Response
 
 from app.utils.dto_utils import pydantic_to_dto
-from app.utils.token_utils import refresh_token_max_age
-from .dependencies import AuthServiceDep
-from .enums import TokenType
+from .dependencies import AuthServiceDep, AuthTokenDep, AuthCurrentUserDep
 from .schemas import AuthSignUpIn, UserPublicOut, AuthLoginIn, AuthTokenOut
+from ..schemas import MessageOut
 from ..users.dtos import UserCreateInDTO
 
 router = APIRouter()
@@ -22,21 +21,18 @@ async def login(
     user_login_reqeust: AuthLoginIn,
     service: AuthServiceDep,
 ) -> AuthTokenOut:
-    tokens = await service.login(request, user_login_reqeust)
-    response.set_cookie(
-        key=TokenType.REFRESH_TOKEN.value,
-        value=tokens.refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=refresh_token_max_age(),
-    )
-    return tokens
+    return await service.login(request, response, user_login_reqeust)
 
 
 @router.post(
     "/logout",
     status_code=status.HTTP_200_OK,
 )
-async def logout():
-    pass
+async def logout(
+    request: Request,
+    response: Response,
+    token: AuthTokenDep,
+    current_user: AuthCurrentUserDep,
+    service: AuthServiceDep,
+) -> MessageOut:
+    return await service.logout(request, response, current_user, token)

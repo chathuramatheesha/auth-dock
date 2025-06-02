@@ -9,6 +9,6 @@ from .logging_conf import configure_logging
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await configure_logging()
-    await init_db()
+    # await init_db()
     yield
     print("Server is shutting down...")
