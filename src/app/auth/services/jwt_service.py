@@ -58,14 +58,13 @@ class JWTService:
             exp=expires_at,
             **extra_fields,
         )
-
-        print("TOKENS SDDDDDDDDDDDDDDD -> ", secret_key, self.__algorithm)
         return jwt.encode(asdict(payload), key=secret_key, algorithm=self.__algorithm)
 
     async def decode_token(
         self,
         token: str,
         token_type: TokenType,
+        verify_token: bool = True,
     ) -> JWTAccessTokenDTO | JWTRefreshTokenDTO | JWTEmailTokenDTO:
         try:
             if token_type == TokenType.ACCESS_TOKEN:
@@ -112,3 +111,37 @@ class JWTService:
 
         except JWTError:
             raise token_exceptions.jwt_credentials_exception
+
+    async def decode_refresh_token_ignore_exceptions(
+        self, token: str
+    ) -> JWTRefreshTokenDTO | None:
+        try:
+            payload = jwt.decode(
+                token, key=self.__secret_key_refresh, algorithms=[self.__algorithm]
+            )
+            token_obj = JWTRefreshTokenDTO(**payload)
+
+            if (
+                not token_obj.jti
+                or not token_obj.sub
+                or not token_obj.exp
+                or not token_obj.iat
+            ):
+                raise None
+
+            expires_at = payload.get("exp")
+            issued_at = payload.get("iat")
+
+            if not expires_at or not issued_at:
+                raise None
+
+            token_obj.exp = datetime.fromtimestamp(expires_at, tz=timezone.utc)
+            token_obj.iat = datetime.fromtimestamp(issued_at, tz=timezone.utc)
+
+            if not token_obj.exp:
+                raise None
+
+            return token_obj
+
+        except JWTError:
+            return None

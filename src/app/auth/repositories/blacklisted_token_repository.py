@@ -13,7 +13,11 @@ class BlacklistedTokenRepository:
         self.__db = db
 
     async def add_token(self, create_dto: BlacklistedTokenDTO) -> BlacklistedToken:
-        stmt = insert(BlacklistedToken).values(**asdict(create_dto))
+        stmt = (
+            insert(BlacklistedToken)
+            .values(**asdict(create_dto))
+            .returning(BlacklistedToken)
+        )
         added_token = await self.__db.scalar(stmt)
         await self.__db.commit()
         return added_token

@@ -5,6 +5,9 @@ from dataclasses import dataclass
 class AuthLoginInDTO:
     email: str
     password: str
+    ip_address: str
+    previous_refresh_token: str | None = None
+    device_info: str | None = None
 
 
 @dataclass(frozen=True)

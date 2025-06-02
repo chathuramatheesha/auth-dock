@@ -1,10 +1,13 @@
 from fastapi import APIRouter, status, Request, Response
 
 from app.utils.dto_utils import pydantic_to_dto
+from app.users.dtos import UserCreateInDTO
+from app.utils.token_utils import refresh_token_max_age
 from .dependencies import AuthServiceDep, AuthTokenDep, AuthCurrentUserDep
+from .dtos import AuthLoginInDTO
+from .enums import TokenType
 from .schemas import AuthSignUpIn, UserPublicOut, AuthLoginIn, AuthTokenOut
 from ..schemas import MessageOut
-from ..users.dtos import UserCreateInDTO
 
 router = APIRouter()
 
@@ -21,7 +24,26 @@ async def login(
     user_login_reqeust: AuthLoginIn,
     service: AuthServiceDep,
 ) -> AuthTokenOut:
-    return await service.login(request, response, user_login_reqeust)
+    tokens = await service.login(
+        AuthLoginInDTO(
+            email=str(user_login_reqeust.email),
+            password=user_login_reqeust.password,
+            ip_address=request.client.host,
+            previous_refresh_token=request.cookies.get(TokenType.REFRESH_TOKEN.value),
+            device_info=request.headers.get("user-agent"),
+        )
+    )
+    response.set_cookie(
+        key=TokenType.REFRESH_TOKEN.value,
+        value=tokens.refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/refresh",
+        max_age=await refresh_token_max_age(),
+    )
+
+    return tokens
 
 
 @router.post(
@@ -30,9 +52,13 @@ async def login(
 )
 async def logout(
     request: Request,
-    response: Response,
     token: AuthTokenDep,
     current_user: AuthCurrentUserDep,
     service: AuthServiceDep,
 ) -> MessageOut:
-    return await service.logout(request, response, current_user, token)
+    refresh_token = request.cookies.get(TokenType.REFRESH_TOKEN.value)
+    return await service.logout(
+        access_token=token.credentials,
+        refresh_token=refresh_token,
+        current_user=current_user,
+    )

@@ -8,7 +8,7 @@ from app.schemas import MessageOutDTO
 from app.users.dtos import UserCreateInDTO, UserOutDTO, UserUpdateDTO
 from app.users.service import UserService
 from app.utils.dto_utils import db_to_dto
-from app.utils.token_utils import refresh_token_max_age
+
 from .blacklisted_token_service import BlacklistedTokenService
 from .jwt_service import JWTService
 from .refresh_token_service import RefreshTokenService
@@ -44,17 +44,11 @@ class AuthService:
     async def signup(self, create_dto: UserCreateInDTO) -> UserOutDTO:
         return await self.__user_service.create_user(create_dto)
 
-    async def login(
-        self,
-        request: Request,
-        response: Response,
-        login_request: AuthLoginInDTO,
-    ) -> AuthTokensOutDTO:
+    async def login(self, login_request: AuthLoginInDTO) -> AuthTokensOutDTO:
         user = await self.__user_service.get_user_by_email(login_request.email)
 
         if not user or not await self.__hasher.verify(
-            login_request.password,
-            user.hashed_password,
+            login_request.password, user.hashed_password
         ):
             raise auth_exceptions.auth_invalid_credentials_exception
 
@@ -64,28 +58,25 @@ class AuthService:
         if not user.is_active:
             raise auth_exceptions.auth_deactivate_account_exception
 
-        # if not user.is_verified:
-        #     raise exceptions.auth_verify_email_exception
-
-        previous_refresh_token = request.cookies.get(TokenType.REFRESH_TOKEN.value)
-
-        if previous_refresh_token:
-            previous_refresh_token_data = await self.__jwt_service.decode_token(
-                previous_refresh_token, TokenType.REFRESH_TOKEN
+        if login_request.previous_refresh_token is not None:
+            previous_refresh_token_dto = (
+                await self.__jwt_service.decode_refresh_token_ignore_exceptions(
+                    login_request.previous_refresh_token
+                )
             )
-            await self.__refresh_token_service.delete_token(
-                ULID(previous_refresh_token_data.jti)
-            )
-            response.delete_cookie(TokenType.REFRESH_TOKEN.value)
 
-        user_ip_address = request.client.host
+            if previous_refresh_token_dto:
+                await self.__refresh_token_service.delete_token(
+                    ULID(previous_refresh_token_dto.jti)
+                )
+
         access_token = await self.__jwt_service.encode_token(
             str(user.id), TokenType.ACCESS_TOKEN.value
         )
         refresh_token = await self.__jwt_service.encode_token(
             str(user.id),
             TokenType.REFRESH_TOKEN,
-            ip=user_ip_address,
+            ip=login_request.ip_address,
             type=TokenType.REFRESH_TOKEN.value,
         )
         refresh_token_data = await self.__jwt_service.decode_token(
@@ -100,20 +91,11 @@ class AuthService:
                 hashed_token=refresh_token,
                 created_at=refresh_token_data.iat,
                 expires_at=refresh_token_data.exp,
-                ip_address=user_ip_address,
-                device_info=request.headers.get("user-agent"),
+                ip_address=login_request.ip_address,
+                device_info=login_request.device_info,
             )
         )
         await self.__update_last_login(user.id)
-
-        response.set_cookie(
-            key=TokenType.REFRESH_TOKEN.value,
-            value=refresh_token,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            max_age=refresh_token_max_age(),
-        )
 
         return AuthTokensOutDTO(
             access_token=access_token,
@@ -123,20 +105,32 @@ class AuthService:
 
     async def logout(
         self,
-        request: Request,
-        response: Response,
+        access_token: str,
+        refresh_token: str,
         current_user: UserOutDTO,
-        token: HTTPAuthorizationCredentials,
     ) -> MessageOutDTO:
         access_token_data = await self.__jwt_service.decode_token(
-            token.credentials, TokenType.ACCESS_TOKEN
+            access_token, TokenType.ACCESS_TOKEN
         )
-        refresh_token_data = await self.__jwt_service.decode_token(
-            request.cookies.get(TokenType.REFRESH_TOKEN.value),
-            TokenType.REFRESH_TOKEN,
+        refresh_token_data = (
+            await self.__jwt_service.decode_refresh_token_ignore_exceptions(
+                refresh_token
+            )
         )
 
         current_datetime = datetime.now(timezone.utc)
+
+        if refresh_token_data:
+            await self.__blacklisted_token_service.add_token(
+                BlacklistedTokenDTO(
+                    jti=ULID(refresh_token_data.jti),
+                    reason=BlacklistReason.LOGOUT,
+                    blacklisted_at=current_datetime,
+                )
+            )
+            await self.__refresh_token_service.delete_token(
+                ULID(refresh_token_data.jti)
+            )
 
         await self.__blacklisted_token_service.add_token(
             BlacklistedTokenDTO(
@@ -145,18 +139,6 @@ class AuthService:
                 blacklisted_at=current_datetime,
             )
         )
-
-        await self.__blacklisted_token_service.add_token(
-            BlacklistedTokenDTO(
-                jti=ULID(refresh_token_data.jti),
-                reason=BlacklistReason.LOGOUT,
-                blacklisted_at=current_datetime,
-            )
-        )
-
-        await self.__refresh_token_service.delete_token(ULID(refresh_token_data.jti))
-
-        response.delete_cookie(TokenType.REFRESH_TOKEN.value)
 
         return MessageOutDTO(auth_constants.AUTH_LOGOUT_SUCCESS)
 
