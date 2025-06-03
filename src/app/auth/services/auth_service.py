@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 
-from fastapi import Request, Response
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.core import Argon2Hasher, ULID
@@ -8,7 +7,6 @@ from app.schemas import MessageOutDTO
 from app.users.dtos import UserCreateInDTO, UserOutDTO, UserUpdateDTO
 from app.users.service import UserService
 from app.utils.dto_utils import db_to_dto
-
 from .blacklisted_token_service import BlacklistedTokenService
 from .jwt_service import JWTService
 from .refresh_token_service import RefreshTokenService
@@ -140,15 +138,25 @@ class AuthService:
             )
         )
 
-        return MessageOutDTO(auth_constants.AUTH_LOGOUT_SUCCESS)
+        return MessageOutDTO(auth_constants.SUC_LOGOUT)
 
     async def authenticate_user(
         self, token: HTTPAuthorizationCredentials
     ) -> UserOutDTO:
-        token_dto = await self.__jwt_service.decode_token(
+        access_token_dto = await self.__jwt_service.decode_token(
             token.credentials, TokenType.ACCESS_TOKEN
         )
-        user = await self.__user_service.get_user_by_id(ULID(token_dto.sub))
+
+        blacklisted_token_exists_by_jti = (
+            await self.__blacklisted_token_service.get_by_jti(
+                ULID(access_token_dto.jti)
+            )
+        )
+
+        if blacklisted_token_exists_by_jti is not None:
+            raise auth_exceptions.auth_token_revoked_exception
+
+        user = await self.__user_service.get_user_by_id(ULID(access_token_dto.sub))
 
         if not user:
             raise auth_exceptions.auth_token_invalid_exception
@@ -158,8 +166,5 @@ class AuthService:
 
         if not user.is_active:
             raise auth_exceptions.auth_deactivate_account_exception
-
-        if await self.__blacklisted_token_service.get_by_jti(ULID(token_dto.jti)):
-            raise auth_exceptions.auth_token_revoked_exception
 
         return await db_to_dto(user, UserOutDTO)

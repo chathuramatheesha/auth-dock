@@ -1,23 +1,23 @@
-# ERROR
-AUTH_INVALID_CREDENTIALS_ERROR = "Invalid email or password."
-AUTH_VERIFY_EMAIL_ERROR = "Please verify your email before logging in."
-AUTH_DEACTIVATE_ACCOUNT_ERROR = (
-    "Your account has been deactivated. Please contact support to restore access."
+# Error Messages
+ERR_AUTH_INVALID_CREDENTIALS = "Invalid email or password."
+ERR_AUTH_VERIFY_EMAIL = "Please verify your email before logging in."
+ERR_ACCOUNT_DEACTIVATED = (
+    "Your account has been deactivated. Please contact support to regain access."
 )
-AUTH_DELETED_ACCOUNT_ERROR = (
-    "Your account has been deleted. Please contact admin regarding this matter"
-)
-AUTH_TOKEN_INVALID_ERROR = "Invalid token or user not found"
-AUTH_USER_ALREADY_VERIFIED_ERROR = "User already verified"
-AUTH_EMAIL_TOKEN_ALREADY_USED_ERROR = "Verification token has already been used"
-AUTH_TOKEN_REVOKER_ERROR = "Token has been revoked or is no longer valid."
+ERR_ACCOUNT_DELETED = "Your account has been deleted. Please contact support."
+ERR_INVALID_TOKEN = "Invalid token or user not found."
+ERR_USER_ALREADY_VERIFIED = "Your email has already been verified."
+ERR_EMAIL_TOKEN_USED = "This verification link has already been used."
+ERR_TOKEN_REVOKED = "This token has been revoked or is no longer valid."
 
-# SUCCESS
-AUTH_USER_VERIFY_SUCCESS = "Email verified successfully."
-AUTH_LOGOUT_SUCCESS = "User logout successfully."
-AUTH_RESEND_VERIFICATION_SUCCESS = "Email verification message send to your email, "
-AUTH_REGISTER_SUCCESS = "Registration successful! Please check your email to verify your account. If you don't see the email in your 'inbox', it may have landed in your 'spam' folder"
-AUTH_EMAIL_VERIFIED_SUCCESS = "Email verified successfully"
-AUTH_RESEND_EMAIL_VERIFICATION_SUCCESS = (
-    "Verification link sent to your email. Please check your 'inbox' and 'spam' folder"
+# Success Messages
+SUC_EMAIL_VERIFIED = "Your email has been successfully verified."
+SUC_LOGOUT = "You have been logged out successfully."
+SUC_VERIFICATION_EMAIL_SENT = (
+    "A verification email has been sent. Please check your inbox and spam folder."
 )
+SUC_REGISTRATION = (
+    "Registration successful! Please verify your email to activate your account. "
+    "If you don't see the email in your inbox, check your spam folder."
+)
+SUC_RESENT_VERIFICATION_EMAIL = "A new verification link has been sent to your email. Please check both your inbox and spam folder."

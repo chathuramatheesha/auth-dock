@@ -1,7 +1,7 @@
 from fastapi import APIRouter, status, Request, Response
 
-from app.utils.dto_utils import pydantic_to_dto
 from app.users.dtos import UserCreateInDTO
+from app.utils.dto_utils import pydantic_to_dto
 from app.utils.token_utils import refresh_token_max_age
 from .dependencies import AuthServiceDep, AuthTokenDep, AuthCurrentUserDep
 from .dtos import AuthLoginInDTO
@@ -24,6 +24,7 @@ async def login(
     user_login_reqeust: AuthLoginIn,
     service: AuthServiceDep,
 ) -> AuthTokenOut:
+    response.delete_cookie(TokenType.REFRESH_TOKEN.value)
     tokens = await service.login(
         AuthLoginInDTO(
             email=str(user_login_reqeust.email),
@@ -39,7 +40,7 @@ async def login(
         httponly=True,
         secure=True,
         samesite="lax",
-        path="/refresh",
+        path="/refresh-token",
         max_age=await refresh_token_max_age(),
     )
 

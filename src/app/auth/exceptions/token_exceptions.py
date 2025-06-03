@@ -26,14 +26,17 @@ jwt_credentials_exception = HTTPException(
 jwt_token_expired_exception = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     detail=token_constants.JWT_TOKEN_EXPIRED,
+    headers={"WWW-Authenticate": "Bearer"},
 )
 
 jwt_token_invalid_exception = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     detail=token_constants.JWT_TOKEN_INVALID,
+    headers={"WWW-Authenticate": "Bearer"},
 )
 
 jwt_token_invalid_type_exception = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     detail=token_constants.JWT_INVALID_TOKEN_TYPE,
+    headers={"WWW-Authenticate": "Bearer"},
 )

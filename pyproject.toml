@@ -30,6 +30,9 @@ packages = [{ include = "app", from = "src" }]
 
 [tool.poetry.group.dev.dependencies]
 black = "^25.1.0"
+pytest = "^8.4.0"
+faker = "^37.3.0"
+pytest-repeat = "^0.9.4"
 
 [tool.poetry.scripts]
 start = 'app.cli:start'

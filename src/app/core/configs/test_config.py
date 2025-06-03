@@ -3,7 +3,7 @@ from pydantic_settings import SettingsConfigDict
 from .base_config import BaseConfig
 
 
-class TestConfig(BaseConfig):
+class ConfigTest(BaseConfig):
     DATABASE_URL: str | None = None
     DATABASE_ECHO: bool | None = None
 

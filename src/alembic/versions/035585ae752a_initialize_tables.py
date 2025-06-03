@@ -1,21 +1,20 @@
-"""Initialize Table
+"""Initialize Tables
 
-Revision ID: 884879f1db5e
+Revision ID: 035585ae752a
 Revises:
-Create Date: 2025-06-03 03:47:53.217289
+Create Date: 2025-06-03 06:58:53.097830
 
 """
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 from app.core import ULIDTypeDB
 
-
 # revision identifiers, used by Alembic.
-revision: str = "884879f1db5e"
+revision: str = "035585ae752a"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -42,7 +41,7 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column("blacklisted_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("jti"),
+        sa.PrimaryKeyConstraint("jti", name=op.f("pk_blacklisted_tokens")),
     )
     op.create_index(
         op.f("ix_blacklisted_tokens_jti"), "blacklisted_tokens", ["jti"], unique=False
@@ -62,7 +61,7 @@ def upgrade() -> None:
         sa.Column("device_info", sa.TEXT(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("jti"),
+        sa.PrimaryKeyConstraint("jti", name=op.f("pk_refresh_tokens")),
     )
     op.create_index(
         op.f("ix_refresh_tokens_jti"), "refresh_tokens", ["jti"], unique=False
@@ -95,7 +94,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=False)
     op.create_index(op.f("ix_users_fullname"), "users", ["fullname"], unique=False)

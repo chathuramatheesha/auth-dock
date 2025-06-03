@@ -2,7 +2,8 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone, timedelta
 
 import ulid
-from jose import jwt, JWTError
+from jose import jwt
+from jose.exceptions import JWTError, ExpiredSignatureError
 
 from ..dtos import JWTAccessTokenDTO, JWTRefreshTokenDTO, JWTEmailTokenDTO
 from ..enums import TokenType
@@ -94,7 +95,6 @@ class JWTService:
             ):
                 raise token_exceptions.jwt_token_invalid_exception
 
-            current_datetime = datetime.now(timezone.utc)
             expires_at = payload.get("exp")
             issued_at = payload.get("iat")
 
@@ -104,10 +104,12 @@ class JWTService:
             token_obj.exp = datetime.fromtimestamp(expires_at, tz=timezone.utc)
             token_obj.iat = datetime.fromtimestamp(issued_at, tz=timezone.utc)
 
-            if not token_obj.exp or token_obj.exp < current_datetime:
+            if not token_obj.exp or not token_obj.iat:
                 raise token_exceptions.jwt_token_expired_exception
 
             return token_obj
+        except ExpiredSignatureError:
+            raise token_exceptions.jwt_token_expired_exception
 
         except JWTError:
             raise token_exceptions.jwt_credentials_exception
@@ -115,6 +117,9 @@ class JWTService:
     async def decode_refresh_token_ignore_exceptions(
         self, token: str
     ) -> JWTRefreshTokenDTO | None:
+        if not token:
+            return None
+
         try:
             payload = jwt.decode(
                 token, key=self.__secret_key_refresh, algorithms=[self.__algorithm]
