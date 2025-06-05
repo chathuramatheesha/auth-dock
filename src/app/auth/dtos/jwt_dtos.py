@@ -11,6 +11,7 @@ class _TokenBase:
     jti: str
     exp: datetime
     iat: datetime
+    type: TokenType
 
 
 # ACCESS TOKEN
@@ -22,11 +23,10 @@ class JWTAccessTokenDTO(_TokenBase):
 # REFRESH TOKEN
 @dataclass
 class JWTRefreshTokenDTO(_TokenBase):
-    type: TokenType
     ip: str
 
 
 # EMAIL TOKEN
 @dataclass
 class JWTEmailTokenDTO(_TokenBase):
-    type: TokenType
+    pass

@@ -1,20 +1,49 @@
-from datetime import datetime, timezone
+# 🔐 Core utilities
+from app.core import Argon2Hasher
 
-from fastapi.security import HTTPAuthorizationCredentials
-
-from app.core import Argon2Hasher, ULID
+# 📦 Shared schemas
 from app.schemas import MessageOutDTO
-from app.users.dtos import UserCreateInDTO, UserOutDTO, UserUpdateDTO
+
+# 👤 User domain
+from app.users.dtos import UserCreateInDTO, UserOutDTO
 from app.users.service import UserService
 from app.utils.dto_utils import db_to_dto
+
+# 🛠️ Auth Services
 from .blacklisted_token_service import BlacklistedTokenService
 from .jwt_service import JWTService
 from .refresh_token_service import RefreshTokenService
+
+# 📄 Auth Constants, Enums & Auth DTOs
 from ..constants import auth_constants
-from ..dtos import AuthTokensOutDTO, AuthLoginInDTO, RefreshTokenDTO
-from ..dtos import BlacklistedTokenDTO
-from ..enums import TokenType, BlacklistReason
-from ..exceptions import auth_exceptions
+from ..dtos import (
+    AuthTokensOutDTO,
+    AuthLoginInDTO,
+)
+from ..dtos.auth_dtos import RefreshAccessTokenInDTO
+from ..enums import TokenType
+
+# 🔄 Token Utility Functions
+from ..helpers import decode_token, get_user_or_auth_error
+from ..helpers.authenticate_user_utils import (
+    validate_token_type,
+    check_token_blacklist,
+)
+from ..helpers.login_utils import (
+    validate_user_credentials,
+    blacklist_previous_access_token,
+    delete_previous_refresh_token,
+    generate_and_save_new_tokens,
+)
+from ..helpers.logout_utils import blacklist_access_token, decode_delete_refresh_token
+from ..helpers.refresh_token_util import (
+    get_token_dtos,
+    check_refresh_blacklist,
+    check_access_blacklist_or_rotation,
+    verify_refresh_token,
+    blacklist_for_rotation,
+    rotate_refresh_token_if_needed,
+)
 
 
 class AuthService:
@@ -32,68 +61,46 @@ class AuthService:
         self.__blacklisted_token_service = blacklisted_token_service
         self.__hasher = hasher
 
-    async def __update_last_login(self, user_id: ULID) -> None:
-        await self.__user_service.update_user(
-            user_id=user_id,
-            update_dto=UserUpdateDTO(last_login_at=datetime.now(timezone.utc)),
+    async def authenticate_user(self, token: str, token_type: TokenType) -> UserOutDTO:
+        validate_token_type(token_type)
+        token_dto = await decode_token(token, token_type, self.__jwt_service)
+
+        await check_token_blacklist(
+            self.__blacklisted_token_service,
+            token_dto.jti,
+            token_type,
         )
-        return
+        user = await get_user_or_auth_error(self.__user_service, token_dto.sub)
+        return await db_to_dto(user, UserOutDTO)
 
     async def signup(self, create_dto: UserCreateInDTO) -> UserOutDTO:
         return await self.__user_service.create_user(create_dto)
 
     async def login(self, login_request: AuthLoginInDTO) -> AuthTokensOutDTO:
-        user = await self.__user_service.get_user_by_email(login_request.email)
-
-        if not user or not await self.__hasher.verify(
-            login_request.password, user.hashed_password
-        ):
-            raise auth_exceptions.auth_invalid_credentials_exception
-
-        if user.is_deleted:
-            raise auth_exceptions.auth_deleted_account_exception
-
-        if not user.is_active:
-            raise auth_exceptions.auth_deactivate_account_exception
-
-        if login_request.previous_refresh_token is not None:
-            previous_refresh_token_dto = (
-                await self.__jwt_service.decode_refresh_token_ignore_exceptions(
-                    login_request.previous_refresh_token
-                )
-            )
-
-            if previous_refresh_token_dto:
-                await self.__refresh_token_service.delete_token(
-                    ULID(previous_refresh_token_dto.jti)
-                )
-
-        access_token = await self.__jwt_service.encode_token(
-            str(user.id), TokenType.ACCESS_TOKEN.value
+        user = await validate_user_credentials(
+            login_request.email,
+            login_request.password,
+            self.__user_service,
+            self.__hasher,
         )
-        refresh_token = await self.__jwt_service.encode_token(
-            str(user.id),
-            TokenType.REFRESH_TOKEN,
-            ip=login_request.ip_address,
-            type=TokenType.REFRESH_TOKEN.value,
+        await blacklist_previous_access_token(
+            login_request.previous_access_token,
+            self.__jwt_service,
+            self.__blacklisted_token_service,
         )
-        refresh_token_data = await self.__jwt_service.decode_token(
-            refresh_token,
-            TokenType.REFRESH_TOKEN,
+        await delete_previous_refresh_token(
+            login_request.previous_refresh_token,
+            self.__jwt_service,
+            self.__refresh_token_service,
         )
-
-        await self.__refresh_token_service.save_refresh_token(
-            RefreshTokenDTO(
-                jti=ULID(refresh_token_data.jti),
-                user_id=ULID(refresh_token_data.sub),
-                hashed_token=refresh_token,
-                created_at=refresh_token_data.iat,
-                expires_at=refresh_token_data.exp,
-                ip_address=login_request.ip_address,
-                device_info=login_request.device_info,
-            )
+        access_token, refresh_token = await generate_and_save_new_tokens(
+            user.id,
+            login_request.ip_address,
+            login_request.device_info,
+            self.__jwt_service,
+            self.__refresh_token_service,
         )
-        await self.__update_last_login(user.id)
+        await self.__user_service.update_last_login(user.id)
 
         return AuthTokensOutDTO(
             access_token=access_token,
@@ -101,70 +108,50 @@ class AuthService:
             token_type="bearer",
         )
 
-    async def logout(
-        self,
-        access_token: str,
-        refresh_token: str,
-        current_user: UserOutDTO,
-    ) -> MessageOutDTO:
-        access_token_data = await self.__jwt_service.decode_token(
-            access_token, TokenType.ACCESS_TOKEN
+    async def logout(self, access_token: str, refresh_token: str) -> MessageOutDTO:
+        access_data = await decode_token(
+            access_token, TokenType.ACCESS_TOKEN, self.__jwt_service
         )
-        refresh_token_data = (
-            await self.__jwt_service.decode_refresh_token_ignore_exceptions(
-                refresh_token
-            )
-        )
-
-        current_datetime = datetime.now(timezone.utc)
-
-        if refresh_token_data:
-            await self.__blacklisted_token_service.add_token(
-                BlacklistedTokenDTO(
-                    jti=ULID(refresh_token_data.jti),
-                    reason=BlacklistReason.LOGOUT,
-                    blacklisted_at=current_datetime,
-                )
-            )
-            await self.__refresh_token_service.delete_token(
-                ULID(refresh_token_data.jti)
-            )
-
-        await self.__blacklisted_token_service.add_token(
-            BlacklistedTokenDTO(
-                jti=ULID(access_token_data.jti),
-                reason=BlacklistReason.LOGOUT,
-                blacklisted_at=current_datetime,
-            )
+        await blacklist_access_token(access_data.jti, self.__blacklisted_token_service)
+        await decode_delete_refresh_token(
+            refresh_token,
+            self.__jwt_service,
+            self.__blacklisted_token_service,
+            self.__refresh_token_service,
         )
 
         return MessageOutDTO(auth_constants.SUC_LOGOUT)
 
-    async def authenticate_user(
-        self, token: HTTPAuthorizationCredentials
-    ) -> UserOutDTO:
-        access_token_dto = await self.__jwt_service.decode_token(
-            token.credentials, TokenType.ACCESS_TOKEN
+    async def refresh_access_token(
+        self, request_dto: RefreshAccessTokenInDTO
+    ) -> AuthTokensOutDTO:
+        access_token_dto, refresh_token_dto = await get_token_dtos(
+            self.__jwt_service, request_dto
         )
-
-        blacklisted_token_exists_by_jti = (
-            await self.__blacklisted_token_service.get_by_jti(
-                ULID(access_token_dto.jti)
-            )
+        await get_user_or_auth_error(self.__user_service, refresh_token_dto.sub)
+        await check_refresh_blacklist(
+            self.__blacklisted_token_service, refresh_token_dto
         )
-
-        if blacklisted_token_exists_by_jti is not None:
-            raise auth_exceptions.auth_token_revoked_exception
-
-        user = await self.__user_service.get_user_by_id(ULID(access_token_dto.sub))
-
-        if not user:
-            raise auth_exceptions.auth_token_invalid_exception
-
-        if user.is_deleted:
-            raise auth_exceptions.auth_deleted_account_exception
-
-        if not user.is_active:
-            raise auth_exceptions.auth_deactivate_account_exception
-
-        return await db_to_dto(user, UserOutDTO)
+        await check_access_blacklist_or_rotation(
+            self.__blacklisted_token_service, access_token_dto, refresh_token_dto
+        )
+        refresh_db = await verify_refresh_token(
+            self.__refresh_token_service,
+            self.__blacklisted_token_service,
+            request_dto,
+            refresh_token_dto,
+        )
+        await blacklist_for_rotation(
+            self.__blacklisted_token_service, access_token_dto, refresh_token_dto
+        )
+        new_refresh_token = await rotate_refresh_token_if_needed(
+            self.__jwt_service, self.__refresh_token_service, refresh_db, request_dto
+        )
+        new_access_token = await self.__jwt_service.encode_token(
+            refresh_db.jti, TokenType.ACCESS_TOKEN
+        )
+        return AuthTokensOutDTO(
+            access_token=new_access_token,
+            refresh_token=new_refresh_token if new_refresh_token else None,
+            token_type="bearer",
+        )

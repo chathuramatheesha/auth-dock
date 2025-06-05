@@ -1,13 +1,14 @@
-from fastapi import APIRouter, status, Request, Response
+from fastapi import APIRouter, status, Request, Response, Cookie
 
+from app.schemas import MessageOut
 from app.users.dtos import UserCreateInDTO
 from app.utils.dto_utils import pydantic_to_dto
-from app.utils.token_utils import refresh_token_max_age
+from app.utils.token_utils import get_refresh_token_max_age
 from .dependencies import AuthServiceDep, AuthTokenDep, AuthCurrentUserDep
 from .dtos import AuthLoginInDTO
+from .dtos.auth_dtos import RefreshAccessTokenInDTO
 from .enums import TokenType
 from .schemas import AuthSignUpIn, UserPublicOut, AuthLoginIn, AuthTokenOut
-from ..schemas import MessageOut
 
 router = APIRouter()
 
@@ -23,14 +24,23 @@ async def login(
     response: Response,
     user_login_reqeust: AuthLoginIn,
     service: AuthServiceDep,
+    refresh_token: str | None = Cookie(None),
 ) -> AuthTokenOut:
-    response.delete_cookie(TokenType.REFRESH_TOKEN.value)
+    async def access_token(header: str) -> str | None:
+        if not header:
+            return None
+
+        return header.split(" ")[1]
+
     tokens = await service.login(
         AuthLoginInDTO(
             email=str(user_login_reqeust.email),
             password=user_login_reqeust.password,
             ip_address=request.client.host,
-            previous_refresh_token=request.cookies.get(TokenType.REFRESH_TOKEN.value),
+            previous_access_token=await access_token(
+                request.headers.get("Authorization")
+            ),
+            previous_refresh_token=refresh_token,
             device_info=request.headers.get("user-agent"),
         )
     )
@@ -40,8 +50,8 @@ async def login(
         httponly=True,
         secure=True,
         samesite="lax",
-        path="/refresh-token",
-        max_age=await refresh_token_max_age(),
+        path="/api/v1/auth",
+        max_age=await get_refresh_token_max_age(),
     )
 
     return tokens
@@ -61,5 +71,35 @@ async def logout(
     return await service.logout(
         access_token=token.credentials,
         refresh_token=refresh_token,
-        current_user=current_user,
     )
+
+
+@router.post("/refresh-token", status_code=status.HTTP_200_OK)
+async def refresh_access_token(
+    request: Request,
+    response: Response,
+    token: AuthTokenDep,
+    service: AuthServiceDep,
+    refresh_token: str = Cookie(Ellipsis),
+) -> AuthTokenOut:
+    tokens = await service.refresh_access_token(
+        RefreshAccessTokenInDTO(
+            access_token=token.credentials,
+            refresh_token=refresh_token,
+            ip_address=request.client.host,
+            device_info=request.headers.get("user-agent"),
+        )
+    )
+
+    if tokens.refresh_token:
+        response.set_cookie(
+            key=TokenType.REFRESH_TOKEN.value,
+            value=tokens.refresh_token,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            path="/api/v1/auth",
+            max_age=await get_refresh_token_max_age(),
+        )
+
+    return tokens

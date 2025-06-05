@@ -6,5 +6,6 @@ class BaseConfig(BaseSettings):
     APP_VERSION: str | None = None
     APP_LINK: str | None = None
     APP_ENV: str | None = None
+    APP_DEBUG: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

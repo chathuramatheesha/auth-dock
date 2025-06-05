@@ -5,9 +5,12 @@ JWT_TOKEN_INVALID = "Token invalid."
 JWT_INVALID_TOKEN_TYPE = "Token type invalid."
 
 # TOKEN ERROR MESSAGES
-TOKEN_REFRESH_SAVE_FAILED_ERROR = (
+REFRESH_TOKEN_SAVE_FAILED_ERROR = (
     "Failed to store refresh token. Please try again later."
 )
+
+REFRESH_TOKEN_NOT_FOUND = "Refresh token not found with id"
+
 BLACKLISTED_TOKEN_SAVE_FAILED_ERROR = (
     "Failed to save token to blacklist. Please try again later."
 )

@@ -3,7 +3,7 @@ from dataclasses import asdict
 import pytest
 from httpx import AsyncClient
 
-from app.users import constants as user_constants
+from app.users.constants import ERR_USER_EMAIL_ALREADY_EXISTS
 from tests.dtos import UserRegisterDTO
 from tests.routers.auth import auth_base_url
 
@@ -32,7 +32,9 @@ async def test_register_user_with_existing_email(
     response = await async_client.post(base_url, json={**asdict(registered_user)})
 
     assert response.status_code == 409
-    assert response.json()["detail"] == user_constants.ERR_USER_EMAIL_ALREADY_EXISTS
+    assert response.json()["detail"] == ERR_USER_EMAIL_ALREADY_EXISTS.format(
+        email=registered_user.email
+    )
 
 
 async def test_register_user_with_invalid_email_format(

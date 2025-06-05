@@ -2,12 +2,17 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone, timedelta
 
 import ulid
-from jose import jwt
-from jose.exceptions import JWTError, ExpiredSignatureError
+from jose import jwt, ExpiredSignatureError
+from jose.exceptions import JWTError
 
 from ..dtos import JWTAccessTokenDTO, JWTRefreshTokenDTO, JWTEmailTokenDTO
 from ..enums import TokenType
-from ..exceptions import token_exceptions
+from ..exceptions.token_exceptions import (
+    JWTTokenTypeInvalidError,
+    JWTTokenInvalidError,
+    JWTTokenExpiredError,
+    JWTTokenCredentialsInvalidError,
+)
 
 
 class JWTService:
@@ -30,7 +35,10 @@ class JWTService:
         self.__email_verification_expire_minutes = email_verification_expire
 
     async def encode_token(
-        self, user_id: str, token_type: TokenType, **extra_fields
+        self,
+        user_id: str,
+        token_type: TokenType,
+        **extra_fields,
     ) -> str:
         expires_at = datetime.now(timezone.utc)
 
@@ -47,7 +55,7 @@ class JWTService:
             dto_class = JWTEmailTokenDTO
             expires_at += timedelta(minutes=self.__email_verification_expire_minutes)
         else:
-            raise token_exceptions.jwt_token_invalid_type_exception
+            raise JWTTokenTypeInvalidError(token_type, [item for item in TokenType])
 
         if not is_dataclass(dto_class):
             raise TypeError(f"{dto_class} must be a dataclass")
@@ -57,6 +65,7 @@ class JWTService:
             jti=str(ulid.new()),
             iat=datetime.now(timezone.utc),
             exp=expires_at,
+            type=token_type,
             **extra_fields,
         )
         return jwt.encode(asdict(payload), key=secret_key, algorithm=self.__algorithm)
@@ -65,8 +74,13 @@ class JWTService:
         self,
         token: str,
         token_type: TokenType,
-        verify_token: bool = True,
+        verify_sub: bool = True,
+        verify_jti: bool = True,
+        verify_exp: bool = True,
     ) -> JWTAccessTokenDTO | JWTRefreshTokenDTO | JWTEmailTokenDTO:
+        if not token:
+            raise JWTTokenInvalidError()
+
         try:
             if token_type == TokenType.ACCESS_TOKEN:
                 secret_key = self.__secret_key_access
@@ -78,75 +92,48 @@ class JWTService:
                 secret_key = self.__secret_key
                 dto_class = JWTEmailTokenDTO
             else:
-                raise token_exceptions.jwt_token_invalid_type_exception
+                raise JWTTokenTypeInvalidError(token_type, [item for item in TokenType])
 
-            payload = jwt.decode(token, key=secret_key, algorithms=[self.__algorithm])
+            payload = jwt.decode(
+                token,
+                key=secret_key,
+                algorithms=[self.__algorithm],
+                options={"verify_exp": verify_exp},
+            )
+
+            payload_token_type = payload.get("type")
+
+            if not payload_token_type or payload_token_type != token_type:
+                raise JWTTokenTypeInvalidError(payload_token_type, [token_type])
+
+            if token_type == TokenType.REFRESH_TOKEN and not payload.get("ip"):
+                raise JWTTokenInvalidError()
 
             if not is_dataclass(dto_class):
                 raise TypeError(f"{dto_class} must be a dataclass")
 
             token_obj = dto_class(**payload)
+            checks = {
+                "sub": verify_sub,
+                "jti": verify_jti,
+                "exp": verify_exp,
+                "iat": True,
+            }
 
-            if (
-                not token_obj.jti
-                or not token_obj.sub
-                or not token_obj.exp
-                or not token_obj.iat
-            ):
-                raise token_exceptions.jwt_token_invalid_exception
+            for attr, should_verify in checks.items():
+                if should_verify and not getattr(token_obj, attr, None):
+                    raise JWTTokenInvalidError()
 
             expires_at = payload.get("exp")
             issued_at = payload.get("iat")
 
-            if not expires_at or not issued_at:
-                raise token_exceptions.jwt_token_invalid_exception
-
             token_obj.exp = datetime.fromtimestamp(expires_at, tz=timezone.utc)
             token_obj.iat = datetime.fromtimestamp(issued_at, tz=timezone.utc)
 
-            if not token_obj.exp or not token_obj.iat:
-                raise token_exceptions.jwt_token_expired_exception
-
             return token_obj
+
         except ExpiredSignatureError:
-            raise token_exceptions.jwt_token_expired_exception
+            raise JWTTokenExpiredError()
 
         except JWTError:
-            raise token_exceptions.jwt_credentials_exception
-
-    async def decode_refresh_token_ignore_exceptions(
-        self, token: str
-    ) -> JWTRefreshTokenDTO | None:
-        if not token:
-            return None
-
-        try:
-            payload = jwt.decode(
-                token, key=self.__secret_key_refresh, algorithms=[self.__algorithm]
-            )
-            token_obj = JWTRefreshTokenDTO(**payload)
-
-            if (
-                not token_obj.jti
-                or not token_obj.sub
-                or not token_obj.exp
-                or not token_obj.iat
-            ):
-                raise None
-
-            expires_at = payload.get("exp")
-            issued_at = payload.get("iat")
-
-            if not expires_at or not issued_at:
-                raise None
-
-            token_obj.exp = datetime.fromtimestamp(expires_at, tz=timezone.utc)
-            token_obj.iat = datetime.fromtimestamp(issued_at, tz=timezone.utc)
-
-            if not token_obj.exp:
-                raise None
-
-            return token_obj
-
-        except JWTError:
-            return None
+            raise JWTTokenCredentialsInvalidError()

@@ -117,23 +117,20 @@ async def registered_user(
     return dto
 
 
+async def get_user_by_email(email: str, db: AsyncSession) -> User:
+    return await db.scalar(select(User).where(User.email == email))
+
+
 @pytest.fixture
 async def test_user(
     async_client: AsyncClient,
     registered_user: UserRegisterDTO,
     db_session: AsyncSession,
 ) -> User:
-    return await db_session.scalar(
-        select(User).where(User.email == registered_user.email)
-    )
+    return await get_user_by_email(registered_user.email, db_session)
 
 
-@pytest.fixture
-async def login_token(
-    async_client: AsyncClient,
-    registered_user: UserRegisterDTO,
-    get_refresh_token_from_headers,
-) -> AuthLoginOutDTO:
+async def login_user(async_client: AsyncClient, registered_user: UserRegisterDTO):
     response = await async_client.post(
         f"/auth/login",
         json={
@@ -141,14 +138,23 @@ async def login_token(
             "password": registered_user.password,
         },
     )
+    return response
 
+
+@pytest.fixture
+async def login_token(
+    async_client: AsyncClient,
+    registered_user,
+    get_refresh_token_from_headers,
+) -> AuthLoginOutDTO:
+
+    response = await login_user(async_client, registered_user)
     data = response.json()
-    refresh_token = await get_refresh_token_from_headers(response.headers)
 
     return AuthLoginOutDTO(
         access_token=data["access_token"],
         token_type="bearer",
-        refresh_token=refresh_token,
+        refresh_token=response.cookies.get("refresh_token"),
     )
 
 

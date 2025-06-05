@@ -4,7 +4,7 @@ from fastapi import Depends
 
 from app.db import SessionDep
 from ..repositories import BlacklistedTokenRepository
-from ..services import BlacklistedTokenService
+from ..services.blacklisted_token_service import BlacklistedTokenService
 
 
 async def _get_blacklisted_token_repo(db: SessionDep) -> BlacklistedTokenRepository:

@@ -1,48 +1,37 @@
-from fastapi import HTTPException, status
-
 from app.auth.constants import auth_constants
 
-# Credentials
-auth_invalid_credentials_exception = HTTPException(
-    status_code=status.HTTP_403_FORBIDDEN,
-    detail=auth_constants.ERR_AUTH_INVALID_CREDENTIALS,
-)
 
-# Account
-auth_deactivate_account_exception = HTTPException(
-    status_code=status.HTTP_403_FORBIDDEN,
-    detail=auth_constants.ERR_ACCOUNT_DEACTIVATED,
-)
+class AuthInvalidCredentialsError(Exception):
+    def __init__(self, err: str = auth_constants.ERR_INVALID_CREDENTIALS):
+        super().__init__(err)
 
-auth_deleted_account_exception = HTTPException(
-    status_code=status.HTTP_403_FORBIDDEN,
-    detail=auth_constants.ERR_ACCOUNT_DELETED,
-)
 
-# Email
-auth_verify_email_exception = HTTPException(
-    status_code=status.HTTP_403_FORBIDDEN,
-    detail=auth_constants.ERR_AUTH_VERIFY_EMAIL,
-)
+class AuthAccountDeactivatedError(Exception):
+    def __init__(self, err: str = auth_constants.ERR_ACCOUNT_DEACTIVATED):
+        super().__init__(err)
 
-auth_user_already_verified_exception = HTTPException(
-    status_code=status.HTTP_400_BAD_REQUEST,
-    detail=auth_constants.ERR_USER_ALREADY_VERIFIED,
-)
 
-# Tokens
-auth_token_invalid_exception = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail=auth_constants.ERR_INVALID_TOKEN,
-)
+class AuthAccountDeletedError(Exception):
+    def __init__(self, err: str = auth_constants.ERR_ACCOUNT_DELETED):
+        super().__init__(err)
 
-auth_email_token_already_used_exception = HTTPException(
-    status_code=status.HTTP_400_BAD_REQUEST,
-    detail=auth_constants.SUC_VERIFICATION_EMAIL_SENT,
-)
 
-auth_token_revoked_exception = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail=auth_constants.ERR_TOKEN_REVOKED,
-    headers={"WWW-Authenticate": "Bearer"},
-)
+class AuthTokenInvalidError(Exception):
+    def __init__(self, err: str = auth_constants.ERR_INVALID_TOKEN):
+        super().__init__(err)
+
+
+class AuthTokenTypeInvalidError(Exception):
+    def __init__(self, token_type: str, valid_type_list: list):
+        self.token_type = token_type
+        self.valid_type_list = valid_type_list
+        super().__init__(
+            f"Invalid token type: {token_type}'. Allowed types are: {', '.join(valid_type_list)}"
+        )
+
+
+class AuthTokenRevokedError(Exception):
+    def __init__(self, token_type: str, revoked_reason: str):
+        self.token_type = token_type
+        self.revoked_reason = revoked_reason
+        super().__init__(auth_constants.ERR_TOKEN_REVOKED.format(reason=revoked_reason))

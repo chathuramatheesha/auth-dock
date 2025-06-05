@@ -1,14 +1,22 @@
 # Error Messages
-ERR_AUTH_INVALID_CREDENTIALS = "Invalid email or password."
-ERR_AUTH_VERIFY_EMAIL = "Please verify your email before logging in."
+ERR_INVALID_CREDENTIALS = "Invalid email or password."
+ERR_VERIFY_EMAIL = "Please verify your email before logging in."
 ERR_ACCOUNT_DEACTIVATED = (
     "Your account has been deactivated. Please contact support to regain access."
 )
 ERR_ACCOUNT_DELETED = "Your account has been deleted. Please contact support."
-ERR_INVALID_TOKEN = "Invalid token or user not found."
 ERR_USER_ALREADY_VERIFIED = "Your email has already been verified."
+ERR_USER_LOGOUT = "Token revoked: user logged out. Please login again."
+
 ERR_EMAIL_TOKEN_USED = "This verification link has already been used."
-ERR_TOKEN_REVOKED = "This token has been revoked or is no longer valid."
+ERR_INVALID_TOKEN = "Invalid token."
+ERR_TOKEN_REVOKED = "Token Revoked: {reason}"
+ERR_TOKEN_UNAUTHORIZED = (
+    "Unauthorized: Device or IP address does not match the original session."
+)
+ERR_TOKEN_TYPE_INVALID = (
+    "Invalid token type: {token_type}. Expected one of: {token_type_list}"
+)
 
 # Success Messages
 SUC_EMAIL_VERIFIED = "Your email has been successfully verified."

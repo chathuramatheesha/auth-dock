@@ -9,6 +9,7 @@ class TokenType(str, Enum):
 
 class BlacklistReason(str, Enum):
     LOGOUT = "logout"
+    LOGIN = "login"
     PASSWORD_CHANGED = "password_changed"
     TOKEN_ROTATION = "token_rotation"
     ACCOUNT_DEACTIVATED = "account_deactivated"

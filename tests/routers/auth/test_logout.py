@@ -13,11 +13,12 @@ from app.auth.models import BlacklistedToken
 from tests.routers.auth import auth_base_url
 
 pytestmark = pytest.mark.anyio
+base_url = f"{auth_base_url}/logout"
 
 
 async def test_logout_success(async_client: AsyncClient, token_header: dict):
     response = await async_client.post(
-        f"{auth_base_url}/logout",
+        base_url,
         headers=token_header,
     )
 
@@ -27,7 +28,7 @@ async def test_logout_success(async_client: AsyncClient, token_header: dict):
 
 async def test_logout_without_auth(async_client: AsyncClient):
     response = await async_client.post(
-        f"{auth_base_url}/logout",
+        base_url,
         headers={},
     )
     data = response.json()
@@ -38,7 +39,7 @@ async def test_logout_without_auth(async_client: AsyncClient):
 
 async def test_logout_invalid_token(async_client: AsyncClient):
     response = await async_client.post(
-        f"{auth_base_url}/logout",
+        base_url,
         headers={"Authorization": "Bearer test.fake.access_token"},
     )
     data = response.json()
@@ -69,13 +70,15 @@ async def test_logout_blacklisted_token(
     await db_session.commit()
 
     response = await async_client.post(
-        f"{auth_base_url}/logout",
+        base_url,
         headers={"Authorization": f"Bearer {login_token.access_token}"},
     )
     data = response.json()
 
     assert response.status_code == 401
-    assert data["detail"] == auth_constants.ERR_TOKEN_REVOKED
+    assert data["detail"] == auth_constants.ERR_TOKEN_REVOKED.format(
+        reason=BlacklistReason.LOGOUT.value
+    )
 
 
 async def test_logout_expired_token(
@@ -97,13 +100,13 @@ async def test_logout_expired_token(
     )
 
     response = await async_client.post(
-        f"{auth_base_url}/logout",
+        base_url,
         headers={"Authorization": f"Bearer {access_token}"},
     )
     data = response.json()
 
     assert response.status_code == 401
-    assert data["detail"] == token_constants.JWT_TOKEN_EXPIRED
+    assert data["detail"] == token_constants.JWT_TOKEN_EXPIRED.format(reaon="")
 
 
 async def test_logout_multiple_times(async_client: AsyncClient, token_header):
@@ -119,4 +122,37 @@ async def test_logout_multiple_times(async_client: AsyncClient, token_header):
     )
 
     assert second_response.status_code == 401
-    assert second_response.json()["detail"] == auth_constants.ERR_TOKEN_REVOKED
+    assert second_response.json()["detail"] == auth_constants.ERR_TOKEN_REVOKED.format(
+        reason=BlacklistReason.LOGOUT.value
+    )
+
+
+async def test_use_first_access_token_after_second_login_should_fail_if_revoked(
+    async_client: AsyncClient,
+    registered_user,
+):
+    login_res_1 = await async_client.post(
+        "/auth/login",
+        json={
+            "email": registered_user.email,
+            "password": registered_user.password,
+        },
+    )
+    await async_client.post(
+        "/auth/login",
+        json={
+            "email": registered_user.email,
+            "password": registered_user.password,
+        },
+        headers={"Authorization": f"Bearer {login_res_1.json()['access_token']}"},
+    )
+
+    response = await async_client.post(
+        base_url,
+        headers={"Authorization": f"Bearer {login_res_1.json()['access_token']}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == auth_constants.ERR_TOKEN_REVOKED.format(
+        reason=BlacklistReason.LOGIN.value
+    )

@@ -1,4 +1,4 @@
-ERR_USER_EMAIL_ALREADY_EXISTS = "User already exists: the provided email is taken."
+ERR_USER_EMAIL_ALREADY_EXISTS = "Email '{email}' already exists."
 ERR_USER_CREATION_FAILED = "User creation failed: internal server error."
 ERR_USER_UPDATE_FAILED = "User update failed: internal server error."
 ERR_USER_ID_NOT_FOUND = "User not found: no user with the given ID."

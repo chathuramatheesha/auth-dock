@@ -6,10 +6,11 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.auth.services import AuthService
 from app.core import Argon2Dep
 from app.users import UserServiceDep
+from app.users.dtos import UserOutDTO
 from .blacklisted_token_dependency import BlacklistedTokenServiceDep
 from .jwt_dependency import JWTServiceDep
 from .refresh_token_dependency import RefreshTokenServiceDep
-from ...users.dtos import UserOutDTO
+from ..enums import TokenType
 
 security = HTTPBearer()
 
@@ -36,7 +37,7 @@ AuthServiceDep = Annotated[AuthService, Depends(_get_auth_service)]
 
 
 async def _get_current_user(token: AuthTokenDep, service: AuthServiceDep) -> UserOutDTO:
-    return await service.authenticate_user(token)
+    return await service.authenticate_user(token.credentials, TokenType.ACCESS_TOKEN)
 
 
 AuthCurrentUserDep = Annotated[UserOutDTO, Depends(_get_current_user)]

@@ -47,8 +47,8 @@ async def test_login_wrong_password(
     )
     data = response.json()
 
-    assert response.status_code == 403
-    assert data["detail"] == auth_constants.ERR_AUTH_INVALID_CREDENTIALS
+    assert response.status_code == 401
+    assert data["detail"] == auth_constants.ERR_INVALID_CREDENTIALS
 
 
 async def test_login_with_unregistered_email(async_client: AsyncClient, faker_lib):
@@ -61,8 +61,8 @@ async def test_login_with_unregistered_email(async_client: AsyncClient, faker_li
     )
     data = response.json()
 
-    assert response.status_code == 403
-    assert data["detail"] == auth_constants.ERR_AUTH_INVALID_CREDENTIALS
+    assert response.status_code == 401
+    assert data["detail"] == auth_constants.ERR_INVALID_CREDENTIALS
 
 
 async def test_login_with_missing_credentials(async_client: AsyncClient, faker_lib):
@@ -75,8 +75,8 @@ async def test_login_with_missing_credentials(async_client: AsyncClient, faker_l
     )
     data = response.json()
 
-    assert response.status_code == 403
-    assert data["detail"] == auth_constants.ERR_AUTH_INVALID_CREDENTIALS
+    assert response.status_code == 401
+    assert data["detail"] == auth_constants.ERR_INVALID_CREDENTIALS
 
 
 async def test_login_sets_refresh_token_cookie(
@@ -145,6 +145,3 @@ async def test_login_deleted_user(
 
     assert response.status_code == 403
     assert data["detail"] == auth_constants.ERR_ACCOUNT_DELETED
-
-
-# async def test_login_unverified_user()
