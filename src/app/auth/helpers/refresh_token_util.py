@@ -17,6 +17,7 @@ from ..exceptions.token_exceptions import (
 from ..services.blacklisted_token_service import BlacklistedTokenService
 from ..services.jwt_service import JWTService
 from ..services.refresh_token_service import RefreshTokenService
+from ...common import gather_with_exception_check
 
 
 # REFRESH ACCESS TOKEN helper functions
@@ -28,16 +29,22 @@ async def get_token_dtos(
     jwt_service: JWTService,
     request_dto: RefreshAccessTokenInDTO,
 ) -> tuple[JWTAccessTokenDTO, JWTRefreshTokenDTO]:
-    refresh_dto = await jwt_service.decode_token(
-        request_dto.refresh_token,
-        TokenType.REFRESH_TOKEN,
-    )
-    access_dto = await jwt_service.decode_token(
-        request_dto.access_token,
-        TokenType.ACCESS_TOKEN,
-        verify_exp=False,
-    )
-    return access_dto, refresh_dto
+
+    tasks = [
+        jwt_service.decode_token(
+            request_dto.access_token,
+            TokenType.ACCESS_TOKEN,
+            verify_exp=False,
+        ),
+        jwt_service.decode_token(
+            request_dto.refresh_token,
+            TokenType.REFRESH_TOKEN,
+        ),
+    ]
+
+    access_token_dto, refresh_token_dto = await gather_with_exception_check(tasks)
+
+    return access_token_dto, refresh_token_dto
 
 
 # Check if the refresh token is blacklisted (revoked for any reason)
@@ -113,21 +120,35 @@ async def verify_refresh_token(
     return token_db
 
 
+async def debug_add_token(dto, token_service):
+    result = await token_service.add_token(dto)
+    print(f"Token added: {result}")
+    return result
+
+
 # Blacklist both access and refresh tokens due to rotation
 async def blacklist_for_rotation(
-    token_service: BlacklistedTokenService,
     access_dto: JWTAccessTokenDTO,
     refresh_dto: JWTRefreshTokenDTO,
+    token_service: BlacklistedTokenService,
 ) -> None:
     now = datetime.now(timezone.utc)
-    for dto in [access_dto, refresh_dto]:
-        await token_service.add_token(
-            BlacklistedTokenDTO(
-                jti=ULID(dto.jti),
-                reason=BlacklistReason.TOKEN_ROTATION,
-                blacklisted_at=now,
-            )
+
+    await token_service.add_token(
+        BlacklistedTokenDTO(
+            jti=ULID(access_dto.jti),
+            reason=BlacklistReason.TOKEN_ROTATION,
+            blacklisted_at=now,
         )
+    )
+
+    await token_service.add_token(
+        BlacklistedTokenDTO(
+            jti=ULID(refresh_dto.jti),
+            reason=BlacklistReason.TOKEN_ROTATION,
+            blacklisted_at=now,
+        )
+    )
 
 
 # If the refresh token is about to expire (less than 2 days), issue a new one and save it

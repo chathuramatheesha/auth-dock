@@ -10,7 +10,7 @@ from sqlalchemy import insert, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.constants import auth_constants, token_constants
-from app.auth.dtos import BlacklistedTokenDTO
+from app.auth.dtos import BlacklistedTokenDTO, JWTRefreshTokenDTO
 from app.auth.enums import BlacklistReason, TokenType
 from app.auth.models import BlacklistedToken
 from app.users.models import User
@@ -104,7 +104,6 @@ async def test_refresh_token_invalid_token(
     )
     data = response.json()
 
-    print(data)
     assert response.status_code == 401
     assert data["detail"] == token_constants.JWT_CREDENTIALS_INVALID
 
@@ -116,21 +115,32 @@ async def test_refresh_token_expired_token(
     settings,
 ):
     user = await get_user_by_email(registered_user.email, db_session)
-    payload = {
-        "sub": user.id,
-        "jti": str(ulid.new()),
-        "exp": datetime.now(timezone.utc) + timedelta(days=-1),
-        "ip": "127.0.0.1",
-        "iat": datetime.now(timezone.utc),
-    }
+    payload = asdict(
+        JWTRefreshTokenDTO(
+            sub=str(user.id),
+            jti=str(ulid.new()),
+            exp=(datetime.now(timezone.utc) + timedelta(days=-1)),
+            iat=datetime.now(timezone.utc),
+            type=TokenType.REFRESH_TOKEN,
+            ip="122.0.0.0.01",
+        )
+    )
+
     refresh_token = jwt.encode(
         payload, key=settings.SECRET_REFRESH_TOKEN, algorithm=settings.ALGORITHM
     )
-    login_res = await login_user(async_client, UserRegisterDTO())
+    login_res = await login_user(
+        async_client,
+        UserRegisterDTO(
+            email=registered_user.email,
+            password=registered_user.password,
+            fullname=registered_user.fullname,
+        ),
+    )
 
     async_client.cookies.set("refresh_token", refresh_token)
     response = await async_client.post(
-        base_url, headers=await get_token_header(login_res.json())
+        base_url, headers=await get_token_header(login_res.json()["access_token"])
     )
 
     assert response.status_code == 401
@@ -212,7 +222,6 @@ async def test_refresh_token_user_does_not_exist(
         base_url, headers=await get_token_header(access_token)
     )
 
-    print(response.json())
     assert response.status_code == 401
     assert response.json()["detail"] == "User not found"
 

@@ -31,6 +31,7 @@ class UserService:
     async def create_user(self, create_request_dto: UserCreateInDTO) -> UserOutDTO:
         # Check if email is already registered
         email_exists = await self.__repo.get_by_email(create_request_dto.email)
+
         if email_exists:
             raise UserEmailExistsError(create_request_dto.email)
 
@@ -46,6 +47,7 @@ class UserService:
 
         # Insert user into database
         created_user = await self.__repo.create_user(create_dto)
+
         if not created_user:
             raise UserCreateFailedError()
 

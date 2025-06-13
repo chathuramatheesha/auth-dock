@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timezone, datetime
 
 from app.core import Argon2Hasher, ULID
@@ -45,23 +46,22 @@ async def blacklist_previous_access_token(
     jwt_service: JWTService,
     blacklisted_token_service: BlacklistedTokenService,
 ) -> None:
-    if access_token:
-        previous_access_token_dto = await jwt_service.decode_token(
-            access_token,
-            TokenType.ACCESS_TOKEN,
-            verify_exp=False,
-            verify_sub=False,
-            verify_jti=False,
-        )
+    previous_access_token_dto = await jwt_service.decode_token(
+        access_token,
+        TokenType.ACCESS_TOKEN,
+        verify_exp=False,
+        verify_sub=False,
+        verify_jti=False,
+    )
 
-        if previous_access_token_dto:
-            await blacklisted_token_service.add_token(
-                BlacklistedTokenDTO(
-                    jti=ULID(previous_access_token_dto.jti),
-                    reason=BlacklistReason.LOGIN,
-                    blacklisted_at=datetime.now(timezone.utc),
-                )
+    if previous_access_token_dto:
+        await blacklisted_token_service.add_token(
+            BlacklistedTokenDTO(
+                jti=ULID(previous_access_token_dto.jti),
+                reason=BlacklistReason.LOGIN,
+                blacklisted_at=datetime.now(timezone.utc),
             )
+        )
 
 
 async def delete_previous_refresh_token(
@@ -69,17 +69,47 @@ async def delete_previous_refresh_token(
     jwt_service: JWTService,
     refresh_token_service: RefreshTokenService,
 ) -> None:
-    if refresh_token:
-        previous_refresh_token_dto = await jwt_service.decode_token(
-            refresh_token,
-            TokenType.REFRESH_TOKEN,
-            verify_exp=False,
+    previous_refresh_token_dto = await jwt_service.decode_token(
+        refresh_token,
+        TokenType.REFRESH_TOKEN,
+        verify_exp=False,
+    )
+
+    if previous_refresh_token_dto:
+        await refresh_token_service.delete_token(ULID(previous_refresh_token_dto.jti))
+
+
+async def blacklist_delete_tokens(
+    access_token: str | None,
+    refresh_token: str | None,
+    jwt_service: JWTService,
+    refresh_token_service: RefreshTokenService,
+    blacklisted_token_service: BlacklistedTokenService,
+) -> None:
+    if not access_token and not refresh_token:
+        return
+
+    tasks = []
+
+    if access_token:
+        tasks.append(
+            blacklist_previous_access_token(
+                access_token,
+                jwt_service,
+                blacklisted_token_service,
+            )
         )
 
-        if previous_refresh_token_dto:
-            await refresh_token_service.delete_token(
-                ULID(previous_refresh_token_dto.jti)
+    if refresh_token:
+        tasks.append(
+            delete_previous_refresh_token(
+                refresh_token,
+                jwt_service,
+                refresh_token_service,
             )
+        )
+
+    await asyncio.gather(*tasks)
 
 
 async def generate_and_save_new_tokens(
@@ -89,14 +119,16 @@ async def generate_and_save_new_tokens(
     jwt_service: JWTService,
     refresh_token_service: RefreshTokenService,
 ) -> tuple[str, str]:
-    new_access_token = await jwt_service.encode_token(
-        str(user_id), TokenType.ACCESS_TOKEN.value
+    new_access_token, new_refresh_token = await asyncio.gather(
+        jwt_service.encode_token(str(user_id), TokenType.ACCESS_TOKEN.value),
+        jwt_service.encode_token(
+            str(user_id),
+            TokenType.REFRESH_TOKEN,
+            ip=ip,
+        ),
+        return_exceptions=True,
     )
-    new_refresh_token = await jwt_service.encode_token(
-        str(user_id),
-        TokenType.REFRESH_TOKEN,
-        ip=ip,
-    )
+
     refresh_token_data = await jwt_service.decode_token(
         new_refresh_token,
         TokenType.REFRESH_TOKEN,

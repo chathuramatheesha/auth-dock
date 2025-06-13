@@ -1,6 +1,6 @@
 from fastapi import APIRouter, status, Request, Response, Cookie
 
-from app.schemas import MessageOut
+from app.common.schemas import MessageOut
 from app.users.dtos import UserCreateInDTO
 from app.utils.dto_utils import pydantic_to_dto
 from app.utils.token_utils import get_refresh_token_max_age

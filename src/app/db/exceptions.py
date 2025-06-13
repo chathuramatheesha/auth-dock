@@ -20,7 +20,7 @@ def handle_db_exceptions(func):
                 detail="Database temporarily unavailable",
             )
 
-        except SQLAlchemyError:
+        except SQLAlchemyError as e:
             raise HTTPException(
                 status_code=500,
                 detail="Database error",

@@ -1,8 +1,8 @@
 # 🔐 Core utilities
-from app.core import Argon2Hasher
 
 # 📦 Shared schemas
-from app.schemas import MessageOutDTO
+from app.common.schemas import MessageOutDTO
+from app.core import Argon2Hasher, ULID
 
 # 👤 User domain
 from app.users.dtos import UserCreateInDTO, UserOutDTO
@@ -31,11 +31,12 @@ from ..helpers.authenticate_user_utils import (
 )
 from ..helpers.login_utils import (
     validate_user_credentials,
-    blacklist_previous_access_token,
-    delete_previous_refresh_token,
     generate_and_save_new_tokens,
+    blacklist_delete_tokens,
 )
-from ..helpers.logout_utils import blacklist_access_token, decode_delete_refresh_token
+from ..helpers.logout_utils import (
+    blacklist_delete_tokens_logout,
+)
 from ..helpers.refresh_token_util import (
     get_token_dtos,
     check_refresh_blacklist,
@@ -44,6 +45,7 @@ from ..helpers.refresh_token_util import (
     blacklist_for_rotation,
     rotate_refresh_token_if_needed,
 )
+from ...common import gather_with_exception_check
 
 
 class AuthService:
@@ -83,16 +85,15 @@ class AuthService:
             self.__user_service,
             self.__hasher,
         )
-        await blacklist_previous_access_token(
+
+        await blacklist_delete_tokens(
             login_request.previous_access_token,
-            self.__jwt_service,
-            self.__blacklisted_token_service,
-        )
-        await delete_previous_refresh_token(
             login_request.previous_refresh_token,
             self.__jwt_service,
             self.__refresh_token_service,
+            self.__blacklisted_token_service,
         )
+
         access_token, refresh_token = await generate_and_save_new_tokens(
             user.id,
             login_request.ip_address,
@@ -112,8 +113,9 @@ class AuthService:
         access_data = await decode_token(
             access_token, TokenType.ACCESS_TOKEN, self.__jwt_service
         )
-        await blacklist_access_token(access_data.jti, self.__blacklisted_token_service)
-        await decode_delete_refresh_token(
+
+        await blacklist_delete_tokens_logout(
+            ULID(access_data.jti),
             refresh_token,
             self.__jwt_service,
             self.__blacklisted_token_service,
@@ -142,14 +144,23 @@ class AuthService:
             refresh_token_dto,
         )
         await blacklist_for_rotation(
-            self.__blacklisted_token_service, access_token_dto, refresh_token_dto
+            access_token_dto,
+            refresh_token_dto,
+            self.__blacklisted_token_service,
         )
-        new_refresh_token = await rotate_refresh_token_if_needed(
-            self.__jwt_service, self.__refresh_token_service, refresh_db, request_dto
+
+        new_access_token, new_refresh_token = await gather_with_exception_check(
+            [
+                self.__jwt_service.encode_token(refresh_db.jti, TokenType.ACCESS_TOKEN),
+                rotate_refresh_token_if_needed(
+                    self.__jwt_service,
+                    self.__refresh_token_service,
+                    refresh_db,
+                    request_dto,
+                ),
+            ]
         )
-        new_access_token = await self.__jwt_service.encode_token(
-            refresh_db.jti, TokenType.ACCESS_TOKEN
-        )
+
         return AuthTokensOutDTO(
             access_token=new_access_token,
             refresh_token=new_refresh_token if new_refresh_token else None,
